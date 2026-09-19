@@ -1,5 +1,6 @@
 import BootScene from "./scenes/BootScene.js";
 import TitleScene from "./scenes/TitleScene.js";
+import ModeScene from "./scenes/ModeScene.js";
 import SelectScene from "./scenes/SelectScene.js";
 import GameScene from "./scenes/GameScene.js";
 import { SCREEN_W, SCREEN_H } from "./config.js";
@@ -15,7 +16,7 @@ const config = {
     default: "arcade",
     arcade: { gravity: { y: 0 }, debug: false },
   },
-  scene: [BootScene, TitleScene, SelectScene, GameScene],
+  scene: [BootScene, TitleScene, ModeScene, SelectScene, GameScene],
 };
 
 new Phaser.Game(config);

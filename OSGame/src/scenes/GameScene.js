@@ -1,7 +1,7 @@
 import {
   SCREEN_W, SCREEN_H, WORLD_W, WORLD_H, FLOOR_Y, PLAY_FLOOR_TOP, PLAY_FLOOR_BOT,
   COL, CSS, PLAYER_ATTACK_SPEED, ENEMY_BASE_HP, ENEMY_BASE_SPEED, ENEMY_TOUCH_DAMAGE,
-  NUM_STAGES, WAVES_PER_STAGE, CODE_FROM_STAGE,
+  NUM_STAGES, CODE_FROM_STAGE,
 } from "../config.js";
 import { PlayerState } from "../player.js";
 import { QuestionPool } from "../data/questions.js";
@@ -25,8 +25,8 @@ export default class GameScene extends Phaser.Scene {
   create() {
     this.ps = new PlayerState(this.charKey);
     this.pool = new QuestionPool();
+    this.learnMode = this.registry.get("mode") === "learn";
     this.stage = 1;
-    this.wave = 1;
     this.mode = "wave";
     this.state = "combat";
     this.score = 0;
@@ -58,7 +58,9 @@ export default class GameScene extends Phaser.Scene {
 
     this.physics.add.overlap(this.pbullets, this.enemies, this._onBulletHit, null, this);
     this.physics.add.overlap(this.player, this.enemies, this._onTouch, null, this);
-    this.physics.add.overlap(this.ebullets, this.player, this._onEnemyBullet, null, this);
+    // NOTE: register the sprite (player) FIRST so Phaser calls back as
+    // (player, bullet) — registering the group first silently swaps the args.
+    this.physics.add.overlap(this.player, this.ebullets, this._onEnemyBullet, null, this);
 
     // per-frame world FX (enemy hp bars, shield ring)
     this.fx = this.add.graphics().setDepth(25);
@@ -69,7 +71,7 @@ export default class GameScene extends Phaser.Scene {
     this.input.keyboard.on("keydown-Q", () => this._useAbility("parry"));
 
     this._buildHUD();
-    this._spawnWave();
+    this._spawnStage();
   }
 
   // -------------------------------------------------------------- bounds/bg
@@ -135,7 +137,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.infoText.setText(this.mode === "boss"
       ? `STAGE ${this.stage} - BOSS FIGHT`
-      : `STAGE ${this.stage}/${NUM_STAGES}   WAVE ${this.wave}/${WAVES_PER_STAGE}`);
+      : `STAGE ${this.stage}/${NUM_STAGES}`);
     this.scoreText.setText(`Score ${this.score}`);
     this.enemyText.setText(`Enemies ${this.enemies.countActive(true)}`);
 
@@ -158,20 +160,20 @@ export default class GameScene extends Phaser.Scene {
     this.hintText.setText(hint);
   }
 
-  // --------------------------------------------------------------- waves
-  _spawnWave() {
+  // --------------------------------------------------------------- stage
+  _spawnStage() {
     const types = STAGE_ENEMY_TYPES[this.stage];
-    const count = 4 + this.stage * 2 + this.wave;
+    const count = Math.min(10, 4 + this.stage * 2);   // cap at 10 mobs per stage
     for (let i = 0; i < count; i++) {
       const etype = Phaser.Utils.Array.GetRandom(types);
       const side = Math.random() < 0.5 ? -1 : 1;
       const x = Phaser.Math.Clamp(
         this.player.x + side * (SCREEN_W / 2 + Phaser.Math.Between(60, 300)), 40, WORLD_W - 40);
       const y = Phaser.Math.Between(PLAY_FLOOR_TOP + 6, PLAY_FLOOR_BOT - 6);
-      // difficulty bumped up a notch: higher base + steeper per-stage scaling
+      // difficulty scales per stage
       this._makeEnemy(etype, x, y, 1.3 + (this.stage - 1) * 0.35);
     }
-    this._announce(`WAVE ${this.wave} / ${WAVES_PER_STAGE}`, CSS.yellow);
+    this._announce(`STAGE ${this.stage} / ${NUM_STAGES}`, CSS.yellow);
   }
 
   // Transient centred banner so stage/wave changes are clearly visible.
@@ -214,22 +216,18 @@ export default class GameScene extends Phaser.Scene {
     return e;
   }
 
-  _waveCleared() {
-    if (this.mode === "boss") {
-      this._startQuiz(1, false, true, "boss");
-    } else if (this.stage < NUM_STAGES) {
-      if (this.wave < WAVES_PER_STAGE) { this.wave += 1; this.spawnDelay = 1.2; }
-      else this._startQuiz(5, this.stage >= CODE_FROM_STAGE, false, "stage");
-    } else {
-      if (this.wave < WAVES_PER_STAGE) { this.wave += 1; this.spawnDelay = 1.2; }
-      else this._startQuiz(7, true, false, "final_test");
-    }
+  _stageCleared() {
+    if (this.mode === "boss") this._startQuiz(1, false, true, "boss");
+    else if (this.stage < NUM_STAGES) this._startQuiz(5, this.stage >= CODE_FROM_STAGE, false, "stage");
+    else this._startQuiz(7, true, false, "final_test");
   }
 
   _startQuiz(num, useCode, boss, purpose) {
     this._setQuizBounds();
     this.quizPurpose = purpose;
-    this.quiz = new Quiz(this, this.pool, { stage: this.stage, total: num, useCode, boss });
+    this.quiz = new Quiz(this, this.pool, {
+      stage: this.stage, total: num, useCode, boss, learn: this.learnMode,
+    });
     this.quiz.begin(this.player);
     this.state = "quiz";
   }
@@ -243,9 +241,8 @@ export default class GameScene extends Phaser.Scene {
     this.player.setVelocity(0, 0);
     this.player.y = (PLAY_FLOOR_TOP + PLAY_FLOOR_BOT) / 2;
     if (purpose === "stage") {
-      this.stage += 1; this.wave = 1; this.mode = "wave"; this.spawnDelay = 1.0;
+      this.stage += 1; this.mode = "wave"; this.spawnDelay = 1.0;
       this.state = "combat";
-      this._announce(`STAGE ${this.stage} / ${NUM_STAGES}`, CSS.cyan);
     } else if (purpose === "final_test") {
       this.mode = "boss"; this._spawnBoss(); this.state = "combat";
     } else if (purpose === "boss") {
@@ -330,8 +327,10 @@ export default class GameScene extends Phaser.Scene {
     this.ps.takeDamage(enemy.ed.touchDamage * this._dt);
   }
 
-  _onEnemyBullet(bullet, player) {
-    if (this.state !== "combat" || bullet._dead) return;
+  _onEnemyBullet(player, bullet) {
+    // defensive: identify whichever argument is actually the bullet
+    if (!bullet || !bullet.bd) { const t = bullet; bullet = player; player = t; }
+    if (this.state !== "combat" || !bullet || bullet._dead || !bullet.bd) return;
     this.ps.takeDamage(bullet.bd.damage);
     this._killBullet(bullet);
   }
@@ -366,7 +365,8 @@ export default class GameScene extends Phaser.Scene {
           const ang = Math.atan2(this.player.y - e.y, this.player.x - e.x);
           const b = this.ebullets.create(e.x, e.y, "ebullet").setDepth(17);
           b.setVelocity(Math.cos(ang) * 240, Math.sin(ang) * 240);
-          b.bd = { damage: e.ed.touchDamage };
+          // keep projectile hits meaningful but never a one-shot
+          b.bd = { damage: Math.min(18, e.ed.touchDamage) };
         }
       }
     });
@@ -435,7 +435,7 @@ export default class GameScene extends Phaser.Scene {
     t(290, 22, `Final Score: ${this.score}`, CSS.white);
     t(330, 20, `Stage ${this.stage}/${NUM_STAGES}   Correct ${this.correctTotal}/${this.questionsAsked}`, CSS.dim);
     t(410, 22, "Press ENTER to play again", CSS.yellow);
-    this.input.keyboard.once("keydown-ENTER", () => this.scene.start("SelectScene"));
+    this.input.keyboard.once("keydown-ENTER", () => this.scene.start("ModeScene"));
   }
 
   // --------------------------------------------------------------- loop
@@ -460,10 +460,10 @@ export default class GameScene extends Phaser.Scene {
 
       if (this.spawnDelay > 0) {
         this.spawnDelay -= dt;
-        if (this.spawnDelay <= 0 && this.enemies.countActive(true) === 0) this._spawnWave();
+        if (this.spawnDelay <= 0 && this.enemies.countActive(true) === 0) this._spawnStage();
       }
       if (this.ps.hp <= 0) { this._showEnd("GAME OVER", CSS.red); }
-      else if (this.enemies.countActive(true) === 0 && this.spawnDelay <= 0) this._waveCleared();
+      else if (this.enemies.countActive(true) === 0 && this.spawnDelay <= 0) this._stageCleared();
 
       this._drawFX();
     } else if (this.state === "quiz") {

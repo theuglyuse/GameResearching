@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OS Quest — Post-Play Assessment</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      max-width: 820px; margin: 0 auto; padding: 32px 20px 60px;
+      background: #0f172a; color: #e2e8f0; line-height: 1.55;
+    }
+    h1 { color: #a5b4fc; margin-bottom: 4px; }
+    .sub { color: #94a3b8; margin-top: 0; margin-bottom: 28px; }
+    .q { background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+         padding: 18px 22px; margin-bottom: 20px; }
+    .q h3 { margin: 0 0 12px; font-size: 1.05rem; }
+    .q .num { color: #facc15; }
+    ol.options { list-style: none; margin: 0; padding: 0; }
+    ol.options li { padding: 7px 0; }
+    .letter { display: inline-block; width: 1.6em; font-weight: 700; color: #22d3ee; }
+    pre { background: #0b1220; border: 1px solid #334155; border-radius: 8px;
+          padding: 12px 14px; overflow-x: auto; color: #67e8f9; font-size: 0.95rem; }
+    code { color: #67e8f9; }
+    footer { color: #64748b; font-size: 0.85rem; margin-top: 30px; }
+  </style>
+</head>
+<body>
+  <h1>OS Quest — Post-Play Assessment</h1>
+  <p class="sub">Ten questions on applying Operating Systems concepts. Choose the single best answer for each.</p>
+
+  <div class="q">
+    <h3><span class="num">1.</span> Three processes arrive at time 0 with CPU bursts P1 = 8 ms, P2 = 2 ms, and P3 = 4 ms. Under <em>non-preemptive Shortest-Job-First</em> scheduling, what is P1's waiting time?</h3>
+    <ol class="options">
+      <li><span class="letter">A.</span> 0 ms</li>
+      <li><span class="letter">B.</span> 6 ms</li>
+      <li><span class="letter">C.</span> 8 ms</li>
+      <li><span class="letter">D.</span> 14 ms</li>
+    </ol>
+  </div>
+
+  <div class="q">
+    <h3><span class="num">2.</span> P1 (burst 6) and P2 (burst 3) both arrive at time 0, with P1 placed in the ready queue first. Using <em>Round Robin</em> with a time quantum of 4, which process completes first?</h3>
+    <ol class="options">
+      <li><span class="letter">A.</span> P1</li>
+      <li><span class="letter">B.</span> P2</li>
+      <li><span class="letter">C.</span> They finish at the same time</li>
+      <li><span class="letter">D.</span> Cannot be determined</li>
+    </ol>
+  </div>
+
+  <div class="q">
+    <h3><span class="num">3.</span> Thread 1 runs <code>lock(A); lock(B);</code> while Thread 2 runs <code>lock(B); lock(A);</code>. Which statement best describes the outcome?</h3>
+    <ol class="options">
+      <li><span class="letter">A.</span> It always deadlocks</li>
+      <li><span class="letter">B.</span> It can deadlock, depending on the timing/interleaving of the two threads</li>
+      <li><span class="letter">C.</span> It can never deadlock because locks are reentrant</li>
+      <li><span class="letter">D.</span> It deadlocks only on a single-core CPU</li>
+    </ol>
+  </div>
+
+  <div class="q">
+    <h3><span class="num">4.</span> With 3 page frames (all initially empty) and the reference string <code>7, 0, 1, 2, 0, 3, 0, 4</code> using <em>LRU</em> replacement, how many page faults occur?</h3>
+    <ol class="options">
+      <li><span class="letter">A.</span> 5</li>
+      <li><span class="letter">B.</span> 6</li>
+      <li><span class="letter">C.</span> 7</li>
+      <li><span class="letter">D.</span> 8</li>
+    </ol>
+  </div>
+
+  <div class="q">
+    <h3><span class="num">5.</span> A team measures page faults for a program and finds that increasing the number of frames from 3 to 4 caused <em>more</em> page faults. Which page-replacement policy are they most likely using?</h3>
+    <ol class="options">
+      <li><span class="letter">A.</span> FIFO</li>
+      <li><span class="letter">B.</span> LRU</li>
+      <li><span class="letter">C.</span> Optimal (OPT)</li>
+      <li><span class="letter">D.</span> Any of them—frame count doesn't matter</li>
+    </ol>
+  </div>
+
+  <div class="q">
+    <h3><span class="num">6.</span> Two threads each execute <code>counter += 1</code> one thousand times on a shared <code>counter</code> (starting at 0) with no synchronization. Which final value is <em>impossible</em>?</h3>
+    <ol class="options">
+      <li><span class="letter">A.</span> 1000</li>
+      <li><span class="letter">B.</span> 1500</li>
+      <li><span class="letter">C.</span> 2000</li>
+      <li><span class="letter">D.</span> 3000</li>
+    </ol>
+  </div>
+
+  <div class="q">
+    <h3><span class="num">7.</span> A producer thread is written as <code>wait(mutex); wait(empty); /* add item */ signal(full); signal(mutex);</code> where <code>empty</code> counts free buffer slots and <code>mutex</code> guards the buffer. What is the danger?</h3>
+    <ol class="options">
+      <li><span class="letter">A.</span> Nothing—this ordering is correct</li>
+      <li><span class="letter">B.</span> It can deadlock: the producer holds <code>mutex</code> while blocking on <code>empty</code>, so no consumer can ever free a slot</li>
+      <li><span class="letter">C.</span> It doubles throughput</li>
+      <li><span class="letter">D.</span> It causes a page fault on every insert</li>
+    </ol>
+  </div>
+
+  <div class="q">
+    <h3><span class="num">8.</span> Thread A calls <code>lock(M)</code> and enters a critical section; before A finishes, Thread B calls <code>unlock(M)</code> on the same mutex. What is the problem?</h3>
+    <ol class="options">
+      <li><span class="letter">A.</span> Nothing—it safely hands the lock to B</li>
+      <li><span class="letter">B.</span> It violates mutex ownership—only the thread that locked M should unlock it, so this is a bug with undefined behavior</li>
+      <li><span class="letter">C.</span> It improves fairness between threads</li>
+      <li><span class="letter">D.</span> It guarantees deadlock is prevented</li>
+    </ol>
+  </div>
+
+  <div class="q">
+    <h3><span class="num">9.</span> The disk head is at cylinder 50. Pending requests are: 16, 24, 43, 82, 140, 170, 190. Using <em>Shortest-Seek-Time-First (SSTF)</em>, which two requests are serviced first, in order?</h3>
+    <ol class="options">
+      <li><span class="letter">A.</span> 16, then 24</li>
+      <li><span class="letter">B.</span> 43, then 24</li>
+      <li><span class="letter">C.</span> 82, then 140</li>
+      <li><span class="letter">D.</span> 43, then 82</li>
+    </ol>
+  </div>
+
+  <div class="q">
+    <h3><span class="num">10.</span> Consider the following C code:</h3>
+    <pre>fork();
+fork();
+printf("hi\n");</pre>
+    <p style="margin:8px 0 0;">Assuming both <code>fork()</code> calls succeed, how many times is <code>hi</code> printed?</p>
+    <ol class="options">
+      <li><span class="letter">A.</span> 1</li>
+      <li><span class="letter">B.</span> 2</li>
+      <li><span class="letter">C.</span> 4</li>
+      <li><span class="letter">D.</span> 8</li>
+    </ol>
+  </div>
+
+  <footer>OS Quest — assessment sheet. Answers are stored separately.</footer>
+</body>
+</html>

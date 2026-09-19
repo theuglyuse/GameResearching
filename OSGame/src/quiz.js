@@ -16,12 +16,13 @@ const PERK_SPACING = 430;
 const FONT = "Consolas, monospace";
 
 export class Quiz {
-  constructor(scene, pool, { stage, total, useCode, boss }) {
+  constructor(scene, pool, { stage, total, useCode, boss, learn }) {
     this.scene = scene;
     this.pool = pool;
     this.stage = stage;
     this.boss = boss;
     this.useCode = useCode;
+    this.learn = !!learn;   // Learn mode: show a lesson + highlight the answer
     this.total = boss ? 1 : total;
 
     this.qIndex = 0;
@@ -67,7 +68,9 @@ export class Quiz {
 
   _clearUI() { this.uiObjs.forEach((o) => o.destroy()); this.uiObjs = []; }
   _clearPads() {
-    this.pads.forEach((p) => { p.rect.destroy(); p.label.destroy(); p.detail.destroy(); p.bar.destroy(); });
+    this.pads.forEach((p) => {
+      p.rect.destroy(); p.inside.destroy(); p.top.destroy(); p.topBg.destroy(); p.bar.destroy();
+    });
     this.pads = [];
   }
 
@@ -112,14 +115,36 @@ export class Quiz {
     this._clearUI(); this._clearPads();
     if (this.boss) { this._boss = this.pool.getBoss(); this.current = this._boss.part1; }
     else { this.current = this.questions[this.qIndex]; }
+    this._beginQuestion();
+  }
+
+  // In Learn mode, teach the concept first; in Review mode go straight to it.
+  _beginQuestion() {
+    this._clearUI(); this._clearPads();
+    if (this.learn) this._showLesson();
+    else this._presentQuestion();
+  }
+
+  _presentQuestion() {
+    this._clearUI();
     this._showQuestionUI();
     this._makeAnswerPads();
     this.state = "question";
   }
 
+  _showLesson() {
+    const text = this.current.learn || this.current.explanation;
+    this._centerCard([
+      { str: "LESSON", size: 30, color: CSS.yellow, bold: true, gap: 52 },
+      { str: text, size: 18, color: CSS.white, gap: 64 },
+      { str: "Press SPACE, then choose the answer that fits the lesson", size: 17, color: CSS.green },
+    ]);
+    this.state = "lesson";
+  }
+
   _showQuestionUI() {
     const q = this.current;
-    const qtext = this._text(SCREEN_W / 2, SCREEN_H - 16, q.q, 20, CSS.white,
+    const qtext = this._text(SCREEN_W / 2, SCREEN_H - 40, q.q, 20, CSS.white,
       { wrap: SCREEN_W - 100, bold: true, originY: 1 });
     let topY = qtext.y - qtext.height;
 
@@ -148,7 +173,7 @@ export class Quiz {
     const startX = this.originX - ANSWER_SPACING * (opts.length - 1) / 2;
     opts.forEach((text, i) => {
       this._addPad(startX + i * ANSWER_SPACING, QUIZ_PAD_Y,
-        String.fromCharCode(65 + i), i, COL.primary, text);
+        String.fromCharCode(65 + i), text, i, COL.primary);
     });
   }
 
@@ -157,23 +182,29 @@ export class Quiz {
     const choices = samplePerks(ps, 3);
     const startX = this.originX - PERK_SPACING * (choices.length - 1) / 2;
     choices.forEach((perk, i) => {
-      this._addPad(startX + i * PERK_SPACING, QUIZ_PAD_Y, perk.name, perk, perk.color, perk.desc);
+      this._addPad(startX + i * PERK_SPACING, QUIZ_PAD_Y,
+        String.fromCharCode(65 + i), `${perk.name}\n${perk.desc}`, perk, perk.color);
     });
   }
 
-  _addPad(x, y, label, payload, color, detail) {
+  // insideLabel: shown big inside the pad; topText: full text shown ON TOP of the pad.
+  // highlight: Learn-mode marker for the correct pad.
+  _addPad(x, y, insideLabel, topText, payload, color, highlight = false) {
     const rect = this.scene.add.rectangle(x, y, PAD_W, PAD_H, color)
-      .setStrokeStyle(2, COL.white).setDepth(45);
-    const labelT = this.scene.add.text(x, y - PAD_H / 2 - 16, label, {
-      fontFamily: FONT, fontSize: "20px", color: CSS.yellow, fontStyle: "bold",
+      .setStrokeStyle(highlight ? 4 : 2, highlight ? COL.yellow : COL.white).setDepth(45);
+    const inside = this.scene.add.text(x, y, highlight ? `${insideLabel} *` : insideLabel, {
+      fontFamily: FONT, fontSize: "18px", color: CSS.white, align: "center",
+      fontStyle: "bold", wordWrap: { width: PAD_W - 16 },
     }).setOrigin(0.5).setDepth(46);
-    const detailT = this.scene.add.text(x, y, detail, {
-      fontFamily: FONT, fontSize: "14px", color: CSS.white, align: "center",
-      wordWrap: { width: PAD_W - 16 },
-    }).setOrigin(0.5).setDepth(46);
+    const top = this.scene.add.text(x, y - PAD_H / 2 - 12, topText, {
+      fontFamily: FONT, fontSize: "15px", color: CSS.yellow, align: "center",
+      wordWrap: { width: PAD_W + 100 },
+    }).setOrigin(0.5, 1).setDepth(47);
+    const topBg = this.scene.add.rectangle(x, top.y - top.height / 2,
+      top.width + 16, top.height + 8, 0x10142a, 0.92).setStrokeStyle(1, color).setDepth(46);
     const bar = this.scene.add.rectangle(x - PAD_W / 2, y + PAD_H / 2 - 6, 0, 7, COL.yellow)
       .setOrigin(0, 0.5).setDepth(46);
-    this.pads.push({ x, y, payload, color, progress: 0, rect, label: labelT, detail: detailT, bar });
+    this.pads.push({ x, y, payload, color, progress: 0, rect, inside, top, topBg, bar });
   }
 
   // ---------------------------------------------------------------- update
@@ -183,6 +214,11 @@ export class Quiz {
 
     if (this.state === "intro") {
       if (spacePressed) this._loadQuestion();
+      return;
+    }
+
+    if (this.state === "lesson") {
+      if (spacePressed) this._presentQuestion();
       return;
     }
 
@@ -251,9 +287,7 @@ export class Quiz {
       if (this.bossPart === 1) {
         this.bossPart = 2;
         this.current = this._boss.part2;
-        this._clearUI(); this._clearPads();
-        this._showQuestionUI(); this._makeAnswerPads();
-        this.state = "question";
+        this._beginQuestion();
       } else {
         if (this.bigBoostEarned) this._applyBigBoost(ps);
         this._end();
@@ -278,10 +312,10 @@ export class Quiz {
 
   _openPerkSelect(ps) {
     this._clearUI(); this._clearPads();
-    this._text(SCREEN_W / 2, SCREEN_H - 30,
+    this._text(SCREEN_W / 2, SCREEN_H - 44,
       `Choose a perk!  (${this.perksRemaining} left) - step onto a pad`, 20, CSS.green,
       { bold: true, originY: 1 });
-    const panel = this.scene.add.rectangle(SCREEN_W / 2, SCREEN_H - 24, SCREEN_W, 48, 0x10142a, 0.92)
+    const panel = this.scene.add.rectangle(SCREEN_W / 2, SCREEN_H - 38, SCREEN_W, 48, 0x10142a, 0.92)
       .setScrollFactor(0).setDepth(52);
     this.uiObjs.push(panel);
     this._makePerkPads(ps);

@@ -202,7 +202,7 @@ class Player(Animated):
                 dmg *= 2
             projectiles.append(Projectile(self.pos, vel, dmg, self.pierce, True))
 
-    def update(self, dt, keys, enemies, projectiles, allow_move=True):
+    def update(self, dt, keys, enemies, projectiles, allow_move=True, floor_bound=True):
         self.animate(dt)
         self._hurt_flash = max(0, self._hurt_flash - dt)
 
@@ -220,9 +220,13 @@ class Player(Animated):
             if move.length() > 0:
                 move = move.normalize() * self.speed
                 self.pos += move
-        # keep in world (can go into the sky for quiz buttons)
+        # keep in world; during combat confined to the floor band,
+        # during a quiz allowed up into the sky to reach the answer pads.
         self.pos.x = clamp(self.pos.x, self.radius, WORLD_W - self.radius)
-        self.pos.y = clamp(self.pos.y, self.radius, WORLD_H - self.radius)
+        if floor_bound:
+            self.pos.y = clamp(self.pos.y, PLAY_FLOOR_TOP, PLAY_FLOOR_BOT)
+        else:
+            self.pos.y = clamp(self.pos.y, self.radius, WORLD_H - self.radius)
 
         # regen
         if self.regen and self.hp < self.max_hp:
@@ -324,6 +328,9 @@ class Enemy(Animated):
             spd *= (1 - player.slow_aura)
         if dist > 1:
             self.pos += direction.normalize() * spd
+        # confine enemies to the floor band
+        self.pos.x = clamp(self.pos.x, self.radius, WORLD_W - self.radius)
+        self.pos.y = clamp(self.pos.y, PLAY_FLOOR_TOP, PLAY_FLOOR_BOT)
 
         # shooter fires at the player
         if self.etype == "shooter":

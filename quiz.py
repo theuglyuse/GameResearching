@@ -1,39 +1,40 @@
 """Interactive between-wave quiz.
 
-The quiz happens IN the world: answer pads appear up in the 'sky'. The player
-walks onto a pad and stands on it briefly (dwell) to select it. When the player
-is near a pad, its full option text is revealed. Correct answers let the player
-walk onto one of three perk pads to claim a reward.
+The quiz happens in a 'room' up in the sky. When it starts, the player is guided
+UP out of the floor by an on-screen arrow. Answer pads are spread far apart so you
+can only stand on one at a time. Walk onto a pad and stand on it (dwell) to select.
+
+Perks are chosen at the END of the quiz: you get one perk pick per question you
+answered correctly.
 """
+import math
+import random
 import pygame
 from pygame.math import Vector2
 from settings import *
 from perks import eligible_perks
-import random
 
-DWELL_TIME = 0.7          # seconds to stand on a pad to select it
-PAD_W, PAD_H = 150, 70
+DWELL_TIME = 0.7             # seconds to stand on a pad to select it
+PAD_W, PAD_H = 200, 74
+ANSWER_SPACING = 340        # far apart so you can't touch two pads at once
+PERK_SPACING = 420
 
 
 class Pad:
-    def __init__(self, x, y, label, payload):
+    def __init__(self, x, y, label, payload, color=PRIMARY):
         self.rect = pygame.Rect(0, 0, PAD_W, PAD_H)
         self.rect.center = (x, y)
-        self.label = label          # short label (e.g., "A")
-        self.payload = payload      # index or perk dict
+        self.label = label
+        self.payload = payload
+        self.color = color
         self.progress = 0.0
-        self.detail = ""            # full text shown when near
-
-    def near(self, player_pos):
-        return Vector2(self.rect.center).distance_to(player_pos) < 140
+        self.detail = ""
 
     def on(self, player_rect):
         return self.rect.colliderect(player_rect)
 
 
 class QuizSession:
-    """Runs a sequence of questions during a quiz phase."""
-
     def __init__(self, pool, stage, num_questions, use_code=False, boss=False):
         self.pool = pool
         self.stage = stage
@@ -43,22 +44,25 @@ class QuizSession:
         self.q_index = 0
         self.correct_count = 0
         self.finished = False
-        self.big_boost_earned = False   # boss reward flag
+        self.big_boost_earned = False
 
-        self.state = "intro"            # intro -> question -> feedback -> perk -> (next) -> end
-        self.timer = 1.4
+        self.state = "intro"        # intro,question,qfeedback,perkselect,perkfeedback,done
+        self.timer = 1.6
         self.pads = []
-        self.origin = Vector2(WORLD_W / 2, WORLD_H / 2)
+        self.origin = Vector2(WORLD_W / 2, QUIZ_PAD_Y)
         self.boss_part = 1
         self.boss_correct = 0
         self.current = None
         self.last_correct = False
         self.message = ""
         self.explanation = ""
+        self.perks_remaining = 0
 
     # ------------------------------------------------------------------ setup
     def begin(self, player):
-        self.origin = Vector2(player.pos.x, FLOOR_Y - 40)
+        half = ANSWER_SPACING * 2 + PAD_W  # keep the widest cluster on-map
+        ox = max(half, min(WORLD_W - half, player.pos.x))
+        self.origin = Vector2(ox, QUIZ_PAD_Y)
         self._load_question()
 
     def _load_question(self):
@@ -76,29 +80,26 @@ class QuizSession:
         self.pads = []
         opts = self.current["options"]
         n = len(opts)
-        spacing = 180
-        start_x = self.origin.x - spacing * (n - 1) / 2
-        y = FLOOR_Y - 150
+        start_x = self.origin.x - ANSWER_SPACING * (n - 1) / 2
         for i, text in enumerate(opts):
-            pad = Pad(start_x + i * spacing, y, chr(65 + i), i)
+            pad = Pad(start_x + i * ANSWER_SPACING, QUIZ_PAD_Y, chr(65 + i), i)
             pad.detail = text
             self.pads.append(pad)
 
     def _make_perk_pads(self, player):
         self.pads = []
-        choices = random.sample(eligible_perks(player), k=min(3, len(eligible_perks(player))))
-        self._perk_choices = choices
-        spacing = 240
-        start_x = self.origin.x - spacing * (len(choices) - 1) / 2
-        y = FLOOR_Y - 150
+        pool = eligible_perks(player)
+        choices = random.sample(pool, k=min(3, len(pool)))
+        start_x = self.origin.x - PERK_SPACING * (len(choices) - 1) / 2
         for i, perk in enumerate(choices):
-            pad = Pad(start_x + i * spacing, y, perk["name"], perk)
+            pad = Pad(start_x + i * PERK_SPACING, QUIZ_PAD_Y, perk["name"],
+                      perk, color=perk["color"])
             pad.detail = perk["desc"]
             self.pads.append(pad)
 
     # ----------------------------------------------------------------- update
     def update(self, dt, player):
-        player_rect = pygame.Rect(0, 0, 44, 44)
+        player_rect = pygame.Rect(0, 0, 40, 40)
         player_rect.center = player.pos
 
         if self.state == "intro":
@@ -107,7 +108,7 @@ class QuizSession:
                 self.state = "question"
             return
 
-        if self.state in ("question", "perk"):
+        if self.state in ("question", "perkselect"):
             selected = None
             for pad in self.pads:
                 if pad.on(player_rect):
@@ -122,14 +123,15 @@ class QuizSession:
                 else:
                     self._resolve_perk(selected, player)
 
-        elif self.state == "feedback":
+        elif self.state == "qfeedback":
             self.timer -= dt
-            if self.timer <= 0 and self._feedback_continue(player):
-                self._advance(player)
+            if self.timer <= 0:
+                self._after_question(player)
 
-    def _feedback_continue(self, player):
-        # continue automatically after a minimum reading time
-        return self.timer <= 0
+        elif self.state == "perkfeedback":
+            self.timer -= dt
+            if self.timer <= 0:
+                self._after_perk(player)
 
     def _resolve_answer(self, pad, player):
         correct = (pad.payload == self.current["answer"])
@@ -139,62 +141,61 @@ class QuizSession:
             if correct:
                 self.boss_correct += 1
             if self.boss_part == 1:
-                self.message = ("Correct! Now the hard part..." if correct
-                                else "Wrong. But steel yourself for part 2...")
+                self.message = ("Correct! Now the reason why..." if correct
+                                else "Wrong — but face part 2!")
             else:
                 both = self.boss_correct == 2
                 self.big_boost_earned = both
-                self.message = ("BOTH PARTS RIGHT! Massive boost incoming!" if both
-                                else "The boss resists... no boost this time.")
+                self.message = ("BOTH RIGHT! Massive boost incoming!" if both
+                                else "The boss resists... no boost.")
         else:
             if correct:
                 self.correct_count += 1
-                self.message = "Correct! Choose a perk."
+                self.message = "Correct!"
             else:
-                self.message = "Not quite — no perk this round."
-        self.state = "feedback"
-        self.timer = 3.2
+                self.message = "Not quite."
+        self.state = "qfeedback"
+        self.timer = 3.4
 
-    def _resolve_perk(self, pad, player):
-        player.apply_perk(pad.payload)
-        self.message = f"Gained: {pad.payload['name']}!"
-        self.explanation = pad.payload["desc"]
-        self.state = "feedback"
-        self.timer = 2.0
-        self._perk_done = True
-
-    def _advance(self, player):
-        # boss two-part flow
+    def _after_question(self, player):
         if self.boss:
             if self.boss_part == 1:
                 self.boss_part = 2
                 self.current = self._boss["part2"]
                 self._make_answer_pads()
                 self.state = "question"
-                return
             else:
                 if self.big_boost_earned:
                     self._apply_big_boost(player)
                 self.finished = True
-                return
-
-        # normal flow
-        if getattr(self, "_perk_done", False):
-            self._perk_done = False
-            self._next_question(player)
-        elif self.last_correct:
-            # offer perk
-            self._make_perk_pads(player)
-            self.state = "perk"
-        else:
-            self._next_question(player)
-
-    def _next_question(self, player):
+            return
+        # normal quiz: advance through all questions first
         self.q_index += 1
-        if self.q_index >= self.total:
-            self.finished = True
-        else:
+        if self.q_index < self.total:
             self._load_question()
+        else:
+            # perk phase: one pick per correct answer
+            self.perks_remaining = self.correct_count
+            if self.perks_remaining > 0:
+                self._make_perk_pads(player)
+                self.state = "perkselect"
+            else:
+                self.finished = True
+
+    def _resolve_perk(self, pad, player):
+        player.apply_perk(pad.payload)
+        self.message = f"Gained: {pad.payload['name']}!"
+        self.explanation = pad.payload["desc"]
+        self.state = "perkfeedback"
+        self.timer = 2.0
+
+    def _after_perk(self, player):
+        self.perks_remaining -= 1
+        if self.perks_remaining > 0:
+            self._make_perk_pads(player)
+            self.state = "perkselect"
+        else:
+            self.finished = True
 
     def _apply_big_boost(self, player):
         player.max_hp += 60
@@ -206,67 +207,132 @@ class QuizSession:
             player.unlock_ability("shield")
 
     # ------------------------------------------------------------------- draw
-    def draw(self, surf, cam, font, bigfont, smallfont):
-        # dim overlay in the sky region for readability
+    def draw(self, surf, cam, font, bigfont, smallfont, player=None):
         overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-        overlay.fill((10, 12, 25, 120))
+        overlay.fill((10, 12, 25, 110))
         surf.blit(overlay, (0, 0))
 
+        # draw the sky "room" band behind the pads
+        room_top = QUIZ_ROOM_TOP - cam.y
+        room_h = (QUIZ_ROOM_BOT - QUIZ_ROOM_TOP)
+        room = pygame.Rect(0, room_top, SCREEN_W, room_h)
+        room_surf = pygame.Surface((SCREEN_W, room_h), pygame.SRCALPHA)
+        room_surf.fill((30, 34, 60, 150))
+        surf.blit(room_surf, (0, room_top))
+        pygame.draw.line(surf, PRIMARY, (0, room_top), (SCREEN_W, room_top), 2)
+        pygame.draw.line(surf, PRIMARY, (0, room_top + room_h),
+                         (SCREEN_W, room_top + room_h), 2)
+
         if self.state == "intro":
-            self._center_text(surf, bigfont, "QUIZ TIME!", SCREEN_H // 2 - 20, YELLOW)
-            self._center_text(surf, font, "Walk UP onto an answer pad and stand on it to choose.",
-                              SCREEN_H // 2 + 24, WHITE)
+            self._panel(surf, bigfont, "QUIZ TIME!", 60, YELLOW)
+            self._panel(surf, font,
+                        "Follow the arrow UP into the room. Stand on an answer pad to choose.",
+                        130, WHITE)
             return
 
-        # question text (top banner)
-        if self.state in ("question",) and self.current:
-            self._wrapped(surf, font, self.current.get("q", ""), 30, WHITE, max_w=SCREEN_W - 80)
-            if "code" in self.current:
-                self._draw_code(surf, smallfont, self.current["code"], 120)
-
-        if self.state == "perk":
-            self._center_text(surf, font, "Answer correct! Step on a perk to claim it.", 34, GREEN)
+        # question / instruction panel at top (never overlaps HUD; HUD hidden in quiz)
+        if self.state in ("question", "qfeedback") and self.current:
+            code = self.current.get("code")
+            self._question_panel(surf, font, smallfont, self.current["q"], code)
+        elif self.state in ("perkselect", "perkfeedback"):
+            remaining = self.perks_remaining
+            self._panel(surf, font,
+                        f"Choose a perk!  ({remaining} pick{'s' if remaining != 1 else ''} left)",
+                        40, GREEN)
 
         # pads
-        if self.state in ("question", "perk"):
+        if self.state in ("question", "perkselect"):
             for pad in self.pads:
-                self._draw_pad(surf, cam, pad, font, smallfont, player_near_only=(self.state == "question"))
+                self._draw_pad(surf, cam, pad, font, smallfont)
+            if player is not None:
+                self._draw_arrow(surf, cam, player)
 
         # feedback
-        if self.state == "feedback":
-            col = GREEN if self.last_correct or getattr(self, "_perk_done", False) else RED
-            self._center_text(surf, bigfont, self.message, 60, col)
-            self._wrapped(surf, font, self.explanation, 120, WHITE, max_w=SCREEN_W - 120)
-            self._center_text(surf, smallfont, "(continues automatically...)", SCREEN_H - 60, DIM)
+        if self.state in ("qfeedback", "perkfeedback"):
+            col = GREEN if self.last_correct or self.state == "perkfeedback" else RED
+            self._panel(surf, bigfont, self.message, 220, col)
+            self._wrapped(surf, font, self.explanation, 280, WHITE, SCREEN_W - 160)
 
         # progress
-        prog = f"Question {min(self.q_index + 1, self.total)}/{self.total}"
         if self.boss:
-            prog = f"BOSS  •  Part {self.boss_part}/2"
-        surf.blit(smallfont.render(prog, True, DIM), (SCREEN_W - 160, SCREEN_H - 30))
+            prog = f"BOSS  Part {self.boss_part}/2"
+        elif self.state in ("perkselect", "perkfeedback"):
+            prog = "Perk selection"
+        else:
+            prog = f"Question {min(self.q_index + 1, self.total)}/{self.total}"
+        surf.blit(smallfont.render(prog, True, DIM), (20, SCREEN_H - 28))
 
-    def _draw_pad(self, surf, cam, pad, font, smallfont, player_near_only):
+    # --- arrow guiding the player up to the pads ---
+    def _draw_arrow(self, surf, cam, player):
+        # target: nearest pad center
+        target = min(self.pads, key=lambda p: Vector2(p.rect.center).distance_to(player.pos))
+        tc = Vector2(target.rect.center)
+        if tc.distance_to(player.pos) < 120:
+            return
+        px = player.pos.x - cam.x
+        py = player.pos.y - cam.y - 40
+        d = (tc - player.pos)
+        if d.length() == 0:
+            return
+        d = d.normalize()
+        tip = Vector2(px, py) + d * 46
+        left = Vector2(px, py) + d.rotate(150) * 22
+        right = Vector2(px, py) + d.rotate(-150) * 22
+        pulse = 180 + int(70 * math.sin(pygame.time.get_ticks() / 150))
+        pygame.draw.polygon(surf, (255, 220, 60), [tip, left, right])
+        pygame.draw.polygon(surf, (pulse, pulse, 60), [tip, left, right], 3)
+
+    def _draw_pad(self, surf, cam, pad, font, smallfont):
         r = pad.rect.move(-cam.x, -cam.y)
-        color = PRIMARY
-        if isinstance(pad.payload, dict):
-            color = pad.payload.get("color", PRIMARY)
-        pygame.draw.rect(surf, color, r, border_radius=10)
-        pygame.draw.rect(surf, WHITE, r, 2, border_radius=10)
-        # dwell progress bar
+        pygame.draw.rect(surf, pad.color, r, border_radius=12)
+        pygame.draw.rect(surf, WHITE, r, 2, border_radius=12)
         if pad.progress > 0:
             w = int(r.width * min(1, pad.progress / DWELL_TIME))
-            pygame.draw.rect(surf, YELLOW, (r.left, r.bottom - 6, w, 6), border_radius=3)
-        # label
-        lab = font.render(pad.label, True, WHITE)
-        surf.blit(lab, lab.get_rect(center=(r.centerx, r.top - 16)))
-        # detail text when near (revealed as the player approaches)
-        detail = self._fit(pad.detail, smallfont, r.width - 12)
-        for j, line in enumerate(detail):
+            pygame.draw.rect(surf, YELLOW, (r.left, r.bottom - 7, w, 7), border_radius=3)
+        # label above pad
+        lab = font.render(pad.label, True, YELLOW)
+        surf.blit(lab, lab.get_rect(center=(r.centerx, r.top - 18)))
+        # option/perk text wrapped inside pad
+        lines = self._fit(pad.detail, smallfont, r.width - 16)
+        total_h = len(lines) * (smallfont.get_height() + 1)
+        y0 = r.centery - total_h // 2
+        for j, line in enumerate(lines):
             t = smallfont.render(line, True, WHITE)
-            surf.blit(t, t.get_rect(center=(r.centerx, r.centery - 12 + j * 16)))
+            surf.blit(t, t.get_rect(center=(r.centerx, y0 + j * (smallfont.get_height() + 1) + 8)))
 
     # -------------------------------------------------------------- text utils
-    def _center_text(self, surf, font, text, y, color):
+    def _question_panel(self, surf, font, smallfont, question, code):
+        max_w = SCREEN_W - 120
+        lines = self._fit(question, font, max_w)
+        line_h = font.get_height() + 4
+        code_lines = code.split("\n") if code else []
+        code_h = (len(code_lines) * (smallfont.get_height() + 2) + 20) if code else 0
+        pad_y = 20
+        box_h = 24 + len(lines) * line_h + (code_h + 12 if code else 0)
+        box = pygame.Rect(60, pad_y, max_w, box_h)
+        panel = pygame.Surface(box.size, pygame.SRCALPHA)
+        panel.fill((18, 22, 40, 235))
+        surf.blit(panel, box.topleft)
+        pygame.draw.rect(surf, PRIMARY, box, 2, border_radius=10)
+        y = box.top + 12
+        for line in lines:
+            t = font.render(line, True, WHITE)
+            surf.blit(t, t.get_rect(midtop=(box.centerx, y)))
+            y += line_h
+        if code:
+            self._draw_code(surf, smallfont, code_lines, y + 6, box)
+
+    def _draw_code(self, surf, font, code_lines, y, box):
+        cw = max(font.size(l)[0] for l in code_lines) + 24
+        ch = len(code_lines) * (font.get_height() + 2) + 12
+        cx = box.centerx - cw // 2
+        pygame.draw.rect(surf, (12, 16, 26), (cx, y, cw, ch), border_radius=8)
+        pygame.draw.rect(surf, CYAN, (cx, y, cw, ch), 1, border_radius=8)
+        for i, line in enumerate(code_lines):
+            t = font.render(line, True, CYAN)
+            surf.blit(t, (cx + 12, y + 6 + i * (font.get_height() + 2)))
+
+    def _panel(self, surf, font, text, y, color):
         t = font.render(text, True, color)
         surf.blit(t, t.get_rect(center=(SCREEN_W // 2, y)))
 
@@ -289,14 +355,3 @@ class QuizSession:
         if cur:
             lines.append(cur)
         return lines
-
-    def _draw_code(self, surf, font, code, y):
-        lines = code.split("\n")
-        box_w = max(font.size(l)[0] for l in lines) + 24
-        box_h = len(lines) * (font.get_height() + 2) + 16
-        x = SCREEN_W // 2 - box_w // 2
-        pygame.draw.rect(surf, (15, 20, 30), (x, y, box_w, box_h), border_radius=8)
-        pygame.draw.rect(surf, PRIMARY, (x, y, box_w, box_h), 2, border_radius=8)
-        for i, line in enumerate(lines):
-            t = font.render(line, True, CYAN)
-            surf.blit(t, (x + 12, y + 10 + i * (font.get_height() + 2)))

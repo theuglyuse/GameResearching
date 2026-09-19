@@ -56,6 +56,7 @@ class Game:
         self.wave = 1
         self.mode = "wave"           # "wave" or "boss"
         self.score = 0
+        self.correct_total = 0
         self.quiz = None
         self.quiz_purpose = None
         self.spawn_delay = 0.0
@@ -115,6 +116,9 @@ class Game:
 
     def _end_quiz(self):
         purpose = self.quiz_purpose
+        self.correct_total += self.quiz.correct_count
+        # drop the player back onto the floor before combat resumes
+        self.player.pos.y = (PLAY_FLOOR_TOP + PLAY_FLOOR_BOT) / 2
         self.quiz = None
         if purpose == "stage":
             self.stage += 1
@@ -181,8 +185,9 @@ class Game:
             self._update_play(dt)
         elif self.state == "quiz":
             keys = pygame.key.get_pressed()
-            # player can still move (to reach pads); no attacking needed
-            self.player.update(dt, keys, [], self.projectiles, allow_move=True)
+            # player moves freely (can go up into the quiz room)
+            self.player.update(dt, keys, [], self.projectiles,
+                               allow_move=True, floor_bound=False)
             self._update_camera()
             self.quiz.update(dt, self.player)
             if self.quiz.finished:
@@ -250,8 +255,11 @@ class Game:
         elif self.state in ("play", "quiz"):
             self._draw_world()
             if self.state == "quiz":
-                self.quiz.draw(self.screen, self.cam, self.font, self.big, self.small)
-            self._draw_hud()
+                self.quiz.draw(self.screen, self.cam, self.font, self.big,
+                               self.small, player=self.player)
+                self._draw_quiz_hud()
+            else:
+                self._draw_hud()
         elif self.state == "gameover":
             self._draw_end("GAME OVER", RED)
         elif self.state == "victory":
@@ -284,6 +292,19 @@ class Game:
             pr.draw(self.screen, self.cam)
         self.player.draw(self.screen, self.cam)
 
+    def _correct_counter(self, live_quiz=0):
+        text = f"Correct  {self.correct_total + live_quiz}"
+        t = self.font.render(text, True, GREEN)
+        r = t.get_rect(topright=(SCREEN_W - 20, 18))
+        pygame.draw.rect(self.screen, (18, 22, 40),
+                         r.inflate(20, 10), border_radius=8)
+        pygame.draw.rect(self.screen, GREEN, r.inflate(20, 10), 1, border_radius=8)
+        self.screen.blit(t, r)
+
+    def _draw_quiz_hud(self):
+        # minimal HUD during quiz so nothing overlaps the question
+        self._correct_counter(live_quiz=self.quiz.correct_count if self.quiz else 0)
+
     def _draw_hud(self):
         p = self.player
         # HP bar
@@ -295,34 +316,39 @@ class Game:
                                            True, WHITE), (28, 22))
         # stage / wave / score
         if self.mode == "boss":
-            info = f"STAGE {self.stage}  •  BOSS FIGHT"
+            info = f"STAGE {self.stage}  -  BOSS FIGHT"
         else:
             info = f"STAGE {self.stage}/{NUM_STAGES}   WAVE {self.wave}/{WAVES_PER_STAGE}"
         self.screen.blit(self.font.render(info, True, WHITE), (20, 50))
         self.screen.blit(self.small.render(f"Score {self.score}", True, DIM), (20, 78))
         self.screen.blit(self.small.render(f"Enemies {len(self.enemies)}", True, DIM), (140, 78))
 
-        # abilities
-        x = SCREEN_W - 200
-        for name, key in (("shield", "E"), ("parry", "Q")):
-            ab = p.abilities.get(name)
-            box = pygame.Rect(x, 20, 80, 40)
-            if ab:
-                ready = ab["timer"] <= 0
-                pygame.draw.rect(self.screen, PRIMARY if ready else (50, 50, 60), box, border_radius=6)
-                pygame.draw.rect(self.screen, WHITE, box, 2, border_radius=6)
-                label = f"[{key}] {name[:5]}"
-                self.screen.blit(self.tiny.render(label, True, WHITE), (x + 6, 26))
-                if not ready:
-                    self.screen.blit(self.tiny.render(f"{ab['timer']:.1f}s", True, YELLOW),
-                                     (x + 6, 42))
-                else:
-                    self.screen.blit(self.tiny.render("READY", True, GREEN), (x + 6, 42))
+        # correct counter (top-right)
+        self._correct_counter()
+
+        # abilities — only show the ones the player has unlocked
+        unlocked = [(n, k) for n, k in (("shield", "E"), ("parry", "Q")) if n in p.abilities]
+        x = SCREEN_W - 20 - len(unlocked) * 90
+        for name, key in unlocked:
+            ab = p.abilities[name]
+            box = pygame.Rect(x, 52, 80, 40)
+            ready = ab["timer"] <= 0
+            pygame.draw.rect(self.screen, PRIMARY if ready else (50, 50, 60), box, border_radius=6)
+            pygame.draw.rect(self.screen, WHITE, box, 2, border_radius=6)
+            self.screen.blit(self.tiny.render(f"[{key}] {name[:5]}", True, WHITE), (x + 6, 58))
+            if not ready:
+                self.screen.blit(self.tiny.render(f"{ab['timer']:.1f}s", True, YELLOW), (x + 6, 74))
+            else:
+                self.screen.blit(self.tiny.render("READY", True, GREEN), (x + 6, 74))
             x += 90
 
-        # controls hint
-        self.screen.blit(self.tiny.render("WASD/Arrows move  •  auto-attack  •  E shield  Q parry",
-                                          True, DIM), (20, SCREEN_H - 24))
+        # controls hint (only mention unlocked abilities)
+        hint = "WASD/Arrows move  -  auto-attack"
+        if "shield" in p.abilities:
+            hint += "  -  E shield"
+        if "parry" in p.abilities:
+            hint += "  -  Q parry"
+        self.screen.blit(self.tiny.render(hint, True, DIM), (20, SCREEN_H - 24))
 
     def _draw_title(self):
         self.screen.fill(BLACK)

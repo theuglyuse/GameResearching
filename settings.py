@@ -14,6 +14,15 @@ WORLD_H = 1200
 # "Sky" (above FLOOR_Y) is where quiz questions / answer buttons appear.
 FLOOR_Y = int(WORLD_H * 0.5)   # top edge of the floor band
 
+# During combat, all entities are confined to this floor band.
+PLAY_FLOOR_TOP = FLOOR_Y + 24
+PLAY_FLOOR_BOT = WORLD_H - 40
+
+# Quiz "room" in the sky: where answer pads live during a quiz.
+QUIZ_PAD_Y = FLOOR_Y - 250          # world-y of the answer pads
+QUIZ_ROOM_TOP = QUIZ_PAD_Y - 120
+QUIZ_ROOM_BOT = FLOOR_Y
+
 # ---- Colors ----
 BLACK = (12, 14, 22)
 WHITE = (236, 240, 245)

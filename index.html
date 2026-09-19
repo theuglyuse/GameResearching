@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OS Quest — Operating Systems Quiz Game</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <h1 class="logo">🖥️ OS Quest</h1>
+      <p class="tagline">Master Operating Systems, one concept at a time</p>
+    </header>
+
+    <!-- START SCREEN -->
+    <section id="screen-start" class="screen active">
+      <div class="card">
+        <h2>Welcome!</h2>
+        <p>Test and build your understanding of core Operating System concepts.
+           Pick a topic (or take the full challenge) and answer conceptual questions.
+           You'll get an explanation after every answer.</p>
+        <h3>Choose a topic:</h3>
+        <div id="topic-list" class="topic-list"><!-- filled by JS --></div>
+        <button id="btn-all" class="btn btn-primary btn-block">🎯 Full Challenge (All Topics)</button>
+      </div>
+    </section>
+
+    <!-- QUIZ SCREEN -->
+    <section id="screen-quiz" class="screen">
+      <div class="card">
+        <div class="quiz-header">
+          <span id="quiz-topic" class="pill"></span>
+          <span id="quiz-progress" class="progress-text"></span>
+        </div>
+        <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+
+        <h2 id="question-text" class="question"></h2>
+        <div id="options" class="options"><!-- filled by JS --></div>
+
+        <div id="feedback" class="feedback hidden">
+          <p id="feedback-title" class="feedback-title"></p>
+          <p id="feedback-explanation" class="feedback-explanation"></p>
+          <button id="btn-next" class="btn btn-primary">Next →</button>
+        </div>
+      </div>
+      <div class="score-badge">Score: <span id="live-score">0</span></div>
+    </section>
+
+    <!-- RESULTS SCREEN -->
+    <section id="screen-results" class="screen">
+      <div class="card center">
+        <h2>Quiz Complete! 🎉</h2>
+        <div id="result-emoji" class="result-emoji">🏆</div>
+        <p id="result-score" class="result-score"></p>
+        <p id="result-message" class="result-message"></p>
+        <button id="btn-restart" class="btn btn-primary">Play Again</button>
+      </div>
+    </section>
+
+    <footer class="footer">Built for learning • OS Quest</footer>
+  </div>
+
+  <script src="questions.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
